@@ -1,5 +1,7 @@
 # MAA × 雷电模拟器 × 明日方舟 —— 自动挂机工程
 
+**仓库**：<https://github.com/LIYuhao-u/maa-arknights-auto> ｜ **作者**：leo ｜ **首个版本**：v1.0.0（2026-10-18）｜ **许可证**：MIT
+
 一份可以无人值守运行的明日方舟挂机方案：**定时唤醒电脑 → 启动雷电模拟器 → 拉起 MAA 执行任务队列（含「开始唤醒」= Link Start）→ 采集运行结果 → 退出模拟器 → 生成报告**。
 
 驱动方式为 **MAA 官方 Python 接口（`asst.py` 直调 MaaCore）**，不依赖 MAA 图形界面、不模拟鼠标点击，因此锁屏也能跑，并且能拿到结构化结果（每个任务成败、掉落、公招、理智药/碎石消耗、错误原因）。
@@ -500,7 +502,7 @@ notepad "$d\summary.txt"
 | 步骤 | 命令 / 操作 | 通过标准 |
 |---|---|---|
 | 1. 依赖 | 安装 **MAA ≥ v5.27**（官方安装包即可，本工程只调用其 `Python\asst.py` 与 `MaaCore.dll`）、**雷电模拟器 9**（装官服《明日方舟》，分辨率 1920×1080）、**Python ≥ 3.10** | `python --version` 有输出 |
-| 2. 取代码 | `git clone <本仓库地址>` → `cd maa-arknights-auto` | 目录里有 `maa_runner.py` |
+| 2. 取代码 | `git clone https://github.com/LIYuhao-u/maa-arknights-auto.git` → `cd maa-arknights-auto` | 目录里有 `maa_runner.py` |
 | 3. 配路径 | `Copy-Item config.example.json config.json`，只改这 3 个键：`maa.install_dir`、`maa.adb_path`、`emulator.ldconsole` | — |
 | 4. 自检 | `.\run_now.ps1 -DryRun` | 输出 `运行成功（exit=0）`，关卡校验行有结论 |
 | 5. 真跑一次 | `.\run_now.ps1` | 模拟器自动启动 → 游戏内自动执行 → 结束时打印报告路径 |

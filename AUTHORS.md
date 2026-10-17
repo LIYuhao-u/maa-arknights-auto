@@ -6,9 +6,10 @@
 |---|---|
 | 项目名 | **maa-arknights-auto** —— MAA × 雷电模拟器 × 明日方舟 无人值守挂机 |
 | 作者 | **leo** &lt;1193725859@qq.com&gt; |
+| GitHub | [@LIYuhao-u](https://github.com/LIYuhao-u) · 仓库 <https://github.com/LIYuhao-u/maa-arknights-auto> |
 | 起始时间 | **2026-10-12**（首版代码 00:25 落地） |
 | 主要开发期 | **2026-10-12 ~ 2026-10-18**（共 7 天，分 5 个里程碑，见 `CHANGELOG.md`） |
-| 发布整理 | **2026-10-18** |
+| 发布整理 | **2026-10-18** 首次公开到 GitHub，打标签 `v1.0.0` |
 | 许可证 | MIT（见 `LICENSE`） |
 
 ## 2. 谁做了什么
