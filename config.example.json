@@ -1,0 +1,99 @@
+{
+  "_readme": "【模板】复制本文件为 config.json 后再改路径（config.json 已被 .gitignore 忽略，不会因为本机路径而入库）。以 _ 开头的键是注释，程序会忽略。所有路径同时支持绝对路径与相对本文件的相对路径。",
+  "maa": {
+    "_comment_install_dir": "MAA 安装目录（内含 MaaCore.dll、resource、Python\\asst）",
+    "install_dir": "C:\\MAA\\MAA-v5.27.1-win-x64",
+    "_comment_gui_config": "GUI 配置路径，相对 install_dir；脚本从这里读取任务队列，和你在 MAA 界面里配置的一致",
+    "gui_config": "config\\gui.new.json",
+    "_comment_adb_path": "adb 可执行文件路径，默认用雷电自带的",
+    "adb_path": "C:\\LDPlayer\\LDPlayer9\\adb.exe",
+    "_comment_adb_address": "MAA 连接串，保持与 MAA 界面「连接设置」一致",
+    "adb_address": "emulator-5554",
+    "_comment_adb_config": "MAA 连接预设名，雷电用 LDPlayer",
+    "adb_config": "LDPlayer",
+    "_comment_touch_mode": "触控模式：minitouch | maatouch | adb",
+    "touch_mode": "minitouch",
+    "_comment_user_dir": "MAA 用户数据（日志、调试图片）写入目录；留空则写到本次运行的 logs\\<run_id>\\maa-debug",
+    "user_dir": "",
+    "_comment_reports": "是否按 GUI 的第三方设置上报企鹅物流 / 一图流（Python 接口不带 GUI 的上报器，由脚本代发）",
+    "report_to_penguin": true,
+    "report_to_yituliu": true,
+    "report_http_timeout_sec": 15
+  },
+  "emulator": {
+    "_comment": "模拟器与收尾策略",
+    "ldconsole": "C:\\LDPlayer\\LDPlayer9\\ldconsole.exe",
+    "instance_index": 0,
+    "auto_launch": true,
+    "launch_wait_sec": 150,
+    "boot_settle_sec": 20,
+    "_comment_quit": "跑完是否退出模拟器（无人值守建议 true）",
+    "quit_after_run": true,
+    "_comment_kill": "退出后若进程仍在，是否强杀这些残留进程",
+    "kill_residual_processes": true,
+    "residual_process_names": [
+      "dnplayer.exe",
+      "ldplayerhelper.exe"
+    ],
+    "_comment_launch_retry": "刚从合盖待机恢复时 ldconsole launch 可能假成功，脚本会按这里的次数重试（每次失败先清理残留再重来）",
+    "launch_retry": 3,
+    "launch_retry_interval_sec": 20
+  },
+  "run": {
+    "_comment_python_path": "计划任务使用哪个 python.exe；留空则自动探测（优先 pythonw.exe 静默运行）",
+    "python_path": "",
+    "_comment_timeouts": "单次运行总超时 / 多久没有任何 MAA 回调就判定卡死并停止",
+    "task_timeout_minutes": 300,
+    "stall_timeout_minutes": 25,
+    "connect_retry": 3,
+    "connect_retry_interval_sec": 15,
+    "_comment_game_check": "运行前校验模拟器里是否装了对应客户端（Official=官服）",
+    "verify_game_package": true,
+    "game_package": "com.hypergryph.arknights",
+    "_comment_prevent_sleep": "运行期间阻止系统自动休眠/待机（只挡空闲自动睡眠，不挡你手动睡眠），结束时自动恢复",
+    "prevent_sleep": true,
+    "_comment_verify_stage": "运行前用 MAA 官方活动接口校验收关卡是否还有效：活动结束后 YW-8 这类关卡会失效，脚本会在这里明确拦下（默认 skip=跳过该任务并报警；可改 abort=中止整次运行；allow=不拦下），而不是让 MAA 去关卡界面瞎试",
+    "verify_stage": true,
+    "stage_activity_api": "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",
+    "stage_check_timeout_sec": 10,
+    "on_invalid_stage": "skip",
+    "_comment_activity_cache": "每次运行按 TTL 自动刷新活动关卡导航数据（新活动开始时不必再手动开 MAA 界面）。失败则继续用本地旧数据，不影响运行",
+    "update_activity_cache": true,
+    "activity_tasks_api": "https://api.maa.plus/MaaAssistantArknights/api/resource/tasks.json",
+    "activity_cache_ttl_hours": 6
+  },
+  "tasks": {
+    "_comment_source": "gui = 使用 MAA GUI 配置里的任务队列（推荐）；override_file 可整套替换",
+    "source": "gui",
+    "override_file": "",
+    "_comment_stage_overrides": "关卡默认以 MAA 界面为准（这里是空的 = 不覆盖任何任务）。想临时强制某个任务打指定关卡，就按「任务名: 关卡名」写进来，例如 {理智作战: CE-6}；运行前的关卡有效性校验对两种来源都生效，活动过期都会在报告里被拦下并说明原因",
+    "stage_overrides": {},
+    "_comment_skip": "按任务名跳过某些任务，例如 [\"自动肉鸽\"]",
+    "skip_tasks": []
+  },
+  "report": {
+    "dir": "logs",
+    "keep_days": 60,
+    "_comment_copy_maa_log": "是否额外把 MAA 核心日志本次新增的片段拷进运行目录",
+    "copy_maa_debug_log": true
+  },
+  "schedule": {
+    "_comment": "计划任务参数；改完时间点后重新执行 register_schedule.ps1 生效",
+    "task_name": "MAA-Arknights-Auto",
+    "times": [
+      "04:10",
+      "16:10"
+    ],
+    "wake_to_run": true,
+    "start_when_available": true,
+    "execution_time_limit_hours": 6,
+    "random_delay_minutes": 0
+  },
+  "dashboard": {
+    "_comment": "运行结束后自动重建可视化看板 dashboard/index.html（零依赖、离线、双击即看）",
+    "enabled": true,
+    "dir": "dashboard",
+    "include_dry_run_by_default": false,
+    "max_runs": 500
+  }
+}

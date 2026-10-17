@@ -1,0 +1,11 @@
+# 统一换行：仓库内用 LF，Windows 工作区检出为 CRLF；PS1 必须 CRLF + UTF-8 BOM 才能在 PowerShell 5.1 下正确显示中文
+* text=auto eol=crlf
+
+*.py    text eol=crlf
+*.ps1   text eol=crlf
+*.md    text eol=crlf
+*.json  text eol=crlf
+*.txt   text eol=crlf
+*.jsonl text eol=crlf
+
+*.png   binary
