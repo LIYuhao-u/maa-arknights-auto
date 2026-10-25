@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-17
+# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-25
 # 项目: maa-arknights-auto（MIT License） · 见 README.md / AUTHORS.md
 
 """MAA + 雷电模拟器 明日方舟 定时自动运行器。
@@ -408,6 +408,7 @@ class RunRecorder:
         self.chain_order: list[int] = []
         self.drops: dict[str, dict[str, dict]] = {}
         self.drop_events: list[dict] = []
+        self.battles_by_task: dict[int, int] = {}
         self.recruit: dict = {
             "results": [],
             "special_tags": [],
@@ -576,7 +577,7 @@ class RunRecorder:
             return
 
         if msg == MSG_SUBTASK_START:
-            self._on_subtask(details)
+            self._on_subtask(details, taskid if isinstance(taskid, int) else None)
             return
 
         if msg == MSG_SUBTASK_ERROR:
@@ -584,7 +585,7 @@ class RunRecorder:
             return
 
         if msg == MSG_SUBTASK_EXTRA_INFO:
-            self._on_extra_info(taskchain, what, details)
+            self._on_extra_info(taskchain, what, details, taskid if isinstance(taskid, int) else None)
             return
 
         if msg == MSG_REPORT_REQUEST:
@@ -601,10 +602,12 @@ class RunRecorder:
             except ValueError:
                 pass
 
-    def _on_subtask(self, details: dict) -> None:
+    def _on_subtask(self, details: dict, taskid: int | None = None) -> None:
         task = str(details.get("task") or "")
         if task in {"StartButton2", "AnnihilationConfirm"}:
             self.counters["battles"] += 1
+            if isinstance(taskid, int):
+                self.battles_by_task[taskid] = self.battles_by_task.get(taskid, 0) + 1
         elif task == "MedicineConfirm":
             self.counters["medicine_used"] += 1
         elif task == "ExpiringMedicineConfirm":
@@ -618,7 +621,9 @@ class RunRecorder:
         elif task == "RecruitNowConfirm":
             self.counters["expedite_used"] += 1
 
-    def _on_extra_info(self, taskchain: str, what: str, details: dict) -> None:
+    def _on_extra_info(
+        self, taskchain: str, what: str, details: dict, taskid: int | None = None
+    ) -> None:
         if what == "StageDrops":
             stage = details.get("stage") if isinstance(details.get("stage"), dict) else {}
             code = str(stage.get("stageCode") or "?")
@@ -635,6 +640,7 @@ class RunRecorder:
             self.drop_events.append(
                 {
                     "time": datetime.now().isoformat(timespec="seconds"),
+                    "taskid": taskid,
                     "stage": code,
                     "stars": details.get("stars"),
                     "cur_times": details.get("cur_times"),
@@ -765,6 +771,7 @@ class RunRecorder:
                 "chains": [dict(self.chains[tid]) for tid in self.chain_order],
                 "drops": json.loads(json.dumps(self.drops, ensure_ascii=False)),
                 "drop_events": list(self.drop_events),
+                "battles_by_task": dict(self.battles_by_task),
                 "recruit": json.loads(json.dumps(self.recruit, ensure_ascii=False)),
                 "counters": dict(self.counters),
                 "infrast": json.loads(json.dumps(self.infrast, ensure_ascii=False)),
@@ -783,6 +790,7 @@ def empty_snapshot() -> dict:
         "chains": [],
         "drops": {},
         "drop_events": [],
+        "battles_by_task": {},
         "recruit": {
             "results": [],
             "special_tags": [],
@@ -1561,6 +1569,8 @@ class Runner:
         exit_code = _RESULT_EXIT.get(result, EXIT_FAILED)
 
         report = self._compose_report(result, exit_code, snapshot)
+        for warn in report.get("stage_usage", {}).get("warnings", []):
+            self.logger.warn(f"  {warn}")
         (self.run_dir / "report.json").write_text(
             json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -1658,6 +1668,13 @@ class Runner:
             artifacts["MAA 调试数据"] = str(self.run_dir / "maa-debug")
 
         tasks = self.task_entries
+        battles_by_task = snapshot.get("battles_by_task") or {}
+        for entry in tasks:
+            entry["battles"] = int(battles_by_task.get(entry.get("task_id"), 0))
+        if self.dry_run:
+            stage_usage = {"items": [], "warnings": [], "notes": []}
+        else:
+            stage_usage = analyze_stage_usage(tasks, snapshot.get("drop_events") or [])
         return {
             "run_id": self.run_id,
             "mode": self.mode,
@@ -1690,11 +1707,118 @@ class Runner:
             "uploads": snapshot.get("uploads", {}),
             "errors": snapshot.get("errors", []),
             "notices": snapshot.get("notices", []),
-            "notes": list(self.notes) + list(snapshot.get("notes", [])),
-            "warnings": self.warnings,
+            "stage_usage": stage_usage,
+            "notes": list(self.notes) + list(snapshot.get("notes", [])) + stage_usage["notes"],
+            "warnings": self.warnings + stage_usage["warnings"],
             "abort_reason": self.abort_reason,
             "artifacts": artifacts,
         }
+
+
+# ======================================================================================
+# 关卡核对：配置要打的关卡 vs 实际打到的关卡
+# ======================================================================================
+
+STAGE_USAGE_TEXT = {
+    "match": "一致",
+    "mismatch": "不一致",
+    "empty-expected": "未指定",
+    "no-battle": "没打成",
+    "unknown-stage": "无法核对",
+}
+
+
+def _render_stages(counter: dict[str, int]) -> str:
+    return "、".join(
+        f"{stage}×{count}" for stage, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+    )
+
+
+def analyze_stage_usage(tasks: list[dict], drop_events: list[dict]) -> dict:
+    """对比「配置的关卡」与「实际打到的关卡」。
+
+    脚本只校验得了「关卡名在 MAA 数据里是否有效」（活动是否过期之类），
+    但 MAA 真正进哪一关是运行期才决定的：关卡留空时它会点「前往上一次作战」，
+    导航失败时也可能沿用它。只有 StageDrops 回调里的 ``stageCode`` 才是事实，
+    所以这里逐任务核对，并把差异写进警告——不然「配置 A、实际打 B」会静默发生。
+    """
+    task_ids = {task.get("task_id") for task in tasks if isinstance(task.get("task_id"), int)}
+    by_task: dict[int, dict[str, int]] = {}
+    orphan: dict[str, int] = {}
+    for event in drop_events:
+        if not isinstance(event, dict):
+            continue
+        stage = str(event.get("stage") or "?")
+        task_id = event.get("taskid")
+        if isinstance(task_id, int) and task_id in task_ids:
+            bucket = by_task.setdefault(task_id, {})
+        else:
+            bucket = orphan
+        bucket[stage] = bucket.get(stage, 0) + 1
+
+    items: list[dict] = []
+    warnings: list[str] = []
+    notes: list[str] = []
+
+    for task in tasks:
+        if str(task.get("core_type")) != "Fight":
+            continue
+        task_id = task.get("task_id")
+        label = str(task.get("label") or "理智作战")
+        expected = str((task.get("params") or {}).get("stage") or "").strip()
+        actual = dict(by_task.get(task_id, {}))
+        battles = int(task.get("battles") or 0)
+        drop_events = sum(actual.values())
+        item = {
+            "task_id": task_id,
+            "label": label,
+            "expected": expected,
+            "actual": actual,
+            "battles": battles,
+            "drop_events": drop_events,
+        }
+
+        if not expected:
+            item["status"] = "empty-expected"
+            if battles:
+                seen = _render_stages(actual) if actual else "（没识别到掉落结算，无法确认是哪一关）"
+                notes.append(
+                    f"任务「{label}」没有指定关卡，打的是「上一次作战」：{seen}（共 {battles} 场）"
+                )
+            else:
+                notes.append(f"任务「{label}」没有指定关卡，本次也没有作战")
+        elif battles == 0:
+            item["status"] = "no-battle"
+            warnings.append(
+                f"任务「{label}」配置关卡 {expected}，但一场都没打成："
+                "MAA 可能没能进入该关卡（关卡名已变 / 导航失败），这一项等于没打"
+            )
+        elif not drop_events:
+            item["status"] = "unknown-stage"
+            notes.append(
+                f"任务「{label}」配置关卡 {expected}，打了 {battles} 场，"
+                "但没识别到掉落结算，无法核对实际打的是哪一关"
+            )
+        else:
+            mismatch = {
+                stage: count for stage, count in actual.items() if stage.upper() != expected.upper()
+            }
+            if mismatch:
+                item["status"] = "mismatch"
+                warnings.append(
+                    f"任务「{label}」配置关卡 {expected}，实际却打到 {_render_stages(mismatch)}"
+                    f"（共 {battles} 场，识别到 {drop_events} 次掉落结算）："
+                    "MAA 没进到配置的关卡（常见原因是关卡名对不上、或导航失败后沿用「上一次作战」）"
+                )
+            else:
+                item["status"] = "match"
+        items.append(item)
+
+    if orphan:
+        notes.append(
+            f"另有 {sum(orphan.values())} 场作战无法对应到具体任务：{_render_stages(orphan)}"
+        )
+    return {"items": items, "warnings": warnings, "notes": notes}
 
 
 # ======================================================================================
@@ -1757,6 +1881,21 @@ def build_summary_text(report: dict) -> str:
             add(f"  {'可用' if check['ok'] else '不可用'}  关卡 {check['stage']}：{check['message']}")
         for skipped in report.get("skipped_tasks") or []:
             add(f"  已跳过  任务「{skipped['label']}」（关卡 {skipped['stage']} 不可用）")
+        add("")
+
+    usage_items = (report.get("stage_usage") or {}).get("items") or []
+    if usage_items:
+        add("── 关卡使用（配置 vs 实际）" + "─" * 40)
+        for item in usage_items:
+            expected = item.get("expected") or "（未指定，打上一次作战）"
+            actual = item.get("actual") or {}
+            battles = int(item.get("battles") or 0)
+            seen = _render_stages(actual) if actual else ("没识别到掉落结算" if battles else "无作战")
+            mark = STAGE_USAGE_TEXT.get(str(item.get("status")), str(item.get("status")))
+            add(
+                f"  [{mark}] {item.get('label', '理智作战'):<8}"
+                f" 配置 {expected} → 实际 {seen}（{battles} 场）"
+            )
         add("")
 
     add("── 掉落统计 " + "─" * 55)

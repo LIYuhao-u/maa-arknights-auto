@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-17
+# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-25
 # 项目: maa-arknights-auto（MIT License） · 见 README.md / AUTHORS.md
 
 """配置加载 + MAA GUI 任务队列 -> MaaCore 参数映射。
@@ -695,6 +695,11 @@ def build_queue(cfg: dict, gui_cfg: dict | None = None) -> tuple[list[TaskSpec],
                 )
 
         if spec.enabled:
+            if spec.core_type == "Fight" and not str(spec.params.get("stage") or "").strip():
+                notes.append(
+                    f"任务「{spec.label}」没有指定关卡：MAA 会点「前往上一次作战」，"
+                    "实际打哪一关由游戏里上次作战的关卡决定，运行前无法确定"
+                )
             specs.append(spec)
 
     for unused in sorted(set(stage_overrides) - used_overrides):
