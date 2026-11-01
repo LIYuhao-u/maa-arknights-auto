@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-25
+# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-11-02
 # 项目: maa-arknights-auto（MIT License） · 见 README.md / AUTHORS.md
 
 """MAA + 雷电模拟器 明日方舟 定时自动运行器。
@@ -765,6 +765,11 @@ class RunRecorder:
             self._fh.close()
             self._fh = None
 
+    def chain_statuses(self) -> dict[int, str]:
+        """任务链 id -> 当前状态（给主循环做"开始唤醒失败就停"的判断用，比 snapshot 轻）。"""
+        with self.lock:
+            return {task_id: str(chain.get("status") or "") for task_id, chain in self.chains.items()}
+
     def snapshot(self) -> dict:
         with self.lock:
             return {
@@ -1080,6 +1085,7 @@ class Runner:
         self.skipped_tasks: list[dict] = []
         self.notes: list[str] = []
         self.crashed = False
+        self.startup_failed = False
 
     # ---------------- 总入口 ----------------
 
@@ -1511,10 +1517,33 @@ class Runner:
         asst.start()
         self.logger.info("  任务已启动，等待执行结束 …")
 
+        startup_task_id = next(
+            (e["task_id"] for e in self.task_entries if e.get("core_type") == "StartUp"), None
+        )
+        abort_on_startup_failure = bool(
+            (self.cfg.get("run") or {}).get("abort_on_startup_failure", True)
+        )
+        startup_stop_sent = False
+
         last_progress = time.monotonic()
         while asst.running():
             time.sleep(1.0)
             now = time.monotonic()
+            if (
+                abort_on_startup_failure
+                and not startup_stop_sent
+                and startup_task_id is not None
+                and self.recorder is not None
+                and should_stop_after_startup(self.task_entries, self.recorder.chain_statuses())
+            ):
+                startup_stop_sent = True
+                self.startup_failed = True
+                self.abort_reason = (
+                    "开始唤醒失败，已停止后续任务（否则每个任务都要各自失败重试一遍）"
+                )
+                self.logger.error(f"  {self.abort_reason}")
+                asst.stop()
+                continue
             idle = now - self.recorder.last_event_ts
             if idle > self.stall_timeout * 60:
                 self.abort_reason = f"MAA 已 {int(idle // 60)} 分钟没有任何回调，判定卡死并停止"
@@ -1617,6 +1646,9 @@ class Runner:
         if self.dry_run:
             return "dry-run"
         if self.abort_reason:
+            # 开始唤醒失败后主动停止后续任务：结论仍然是「失败」，不能算成用户中断
+            if self.startup_failed:
+                return "failed"
             return "timeout" if "超过" in self.abort_reason or "卡死" in self.abort_reason else "aborted"
         if not self.task_entries:
             return "failed"
@@ -1716,6 +1748,25 @@ class Runner:
 
 
 # ======================================================================================
+# 开始唤醒失败 → 提前中止后续任务
+# ======================================================================================
+
+
+def should_stop_after_startup(entries: list[dict], statuses: dict[int, str]) -> bool:
+    """「开始唤醒」任务链失败时，是否应该停止后面的任务。
+
+    为什么：开始唤醒一旦失败（游戏没起来、卡在公告/更新页），后面的公招、基建、作战
+    全都会在"认不出界面"的状态下各自重试一遍再失败——每次白跑 3~5 分钟，还容易让人以为
+    "是这些任务坏了"。真正的原因只有一个，所以直接停掉、把原因写清楚。
+    """
+    for entry in entries:
+        if str(entry.get("core_type")) != "StartUp":
+            continue
+        return statuses.get(entry.get("task_id"), "") == "error"
+    return False
+
+
+# ======================================================================================
 # 关卡核对：配置要打的关卡 vs 实际打到的关卡
 # ======================================================================================
 
@@ -1724,6 +1775,8 @@ STAGE_USAGE_TEXT = {
     "mismatch": "不一致",
     "empty-expected": "未指定",
     "no-battle": "没打成",
+    "idle": "未作战",
+    "skipped": "未执行",
     "unknown-stage": "无法核对",
 }
 
@@ -1788,11 +1841,27 @@ def analyze_stage_usage(tasks: list[dict], drop_events: list[dict]) -> dict:
             else:
                 notes.append(f"任务「{label}」没有指定关卡，本次也没有作战")
         elif battles == 0:
-            item["status"] = "no-battle"
-            warnings.append(
-                f"任务「{label}」配置关卡 {expected}，但一场都没打成："
-                "MAA 可能没能进入该关卡（关卡名已变 / 导航失败），这一项等于没打"
-            )
+            # 同样是"0 场"，原因不同，严重程度也不同：
+            #   任务链出错 → 真的没进去（警告）；任务链正常完成 → 多半是理智不够/已达成本次目标（提示）
+            task_status = str(task.get("status") or "")
+            if task_status == "completed":
+                item["status"] = "idle"
+                notes.append(
+                    f"任务「{label}」配置关卡 {expected}，任务完成但没有作战"
+                    "（多半是理智不够或本次目标已达成）"
+                )
+            elif task_status == "error":
+                item["status"] = "no-battle"
+                warnings.append(
+                    f"任务「{label}」配置关卡 {expected}，但任务链出错、一场都没打成："
+                    "MAA 可能没能进入该关卡（关卡名已变 / 导航失败）"
+                )
+            else:
+                item["status"] = "skipped"
+                notes.append(
+                    f"任务「{label}」配置关卡 {expected}，本次没有执行到"
+                    f"（状态：{task_status or '未知'}）"
+                )
         elif not drop_events:
             item["status"] = "unknown-stage"
             notes.append(

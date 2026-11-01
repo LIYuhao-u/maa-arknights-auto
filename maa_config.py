@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-10-25
+# 作者: leo <1193725859@qq.com> · 创建 2026-10-12 · 最近修改 2026-11-02
 # 项目: maa-arknights-auto（MIT License） · 见 README.md / AUTHORS.md
 
 """配置加载 + MAA GUI 任务队列 -> MaaCore 参数映射。
@@ -60,6 +60,7 @@ DEFAULTS: dict[str, Any] = {
         "connect_retry_interval_sec": 15,
         "verify_game_package": True,
         "game_package": "com.hypergryph.arknights",
+        "abort_on_startup_failure": True,
         "prevent_sleep": True,
         "verify_stage": True,
         "stage_activity_api": "https://api.maa.plus/MaaAssistantArknights/api/gui/StageActivityV2.json",

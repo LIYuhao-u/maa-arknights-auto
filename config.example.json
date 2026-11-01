@@ -1,4 +1,4 @@
-{
+﻿{
   "_readme": "【模板】复制本文件为 config.json 后再改路径（config.json 已被 .gitignore 忽略，不会因为本机路径而入库）。以 _ 开头的键是注释，程序会忽略。所有路径同时支持绝对路径与相对本文件的相对路径。",
   "maa": {
     "_comment_install_dir": "MAA 安装目录（内含 MaaCore.dll、resource、Python\\asst）",
@@ -50,6 +50,8 @@
     "_comment_game_check": "运行前校验模拟器里是否装了对应客户端（Official=官服）",
     "verify_game_package": true,
     "game_package": "com.hypergryph.arknights",
+    "_comment_abort_on_startup": "开始唤醒失败时是否停止后续任务（true=停止，省掉每个任务各自失败重试的 3~5 分钟；false=照旧一个个跑完），结论都记为「失败」",
+    "abort_on_startup_failure": true,
     "_comment_prevent_sleep": "运行期间阻止系统自动休眠/待机（只挡空闲自动睡眠，不挡你手动睡眠），结束时自动恢复",
     "prevent_sleep": true,
     "_comment_verify_stage": "运行前用 MAA 官方活动接口校验收关卡是否还有效：活动结束后 YW-8 这类关卡会失效，脚本会在这里明确拦下（默认 skip=跳过该任务并报警；可改 abort=中止整次运行；allow=不拦下），而不是让 MAA 去关卡界面瞎试",
